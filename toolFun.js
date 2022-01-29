@@ -46,12 +46,8 @@ const testInterface = {
   }
 
 };
-module.exports = { testInterface }
 
-
-
-
-
+module.exports = {testInterface}
 
 
 
