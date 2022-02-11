@@ -1,37 +1,58 @@
 const os = require("os");
+const axios = require('axios');
 const io = require("socket.io").listen("1111");
 var diskinfo = require('diskinfo');
 //当前盘符
 var current_disk = __dirname.substr(0, 2).toLowerCase();
 const osUtils = require("os-utils");
-let apiStatus = require('./apiTest')
+const { apiList } = require('./apiList');
 var currCPU = 0;
 var interval = -1;
+const allApiReq = [];
 let data = {
   IP: getIP(),
-  apiStatus: 0,
+  apiStatus: '',
   memory: 0,
   cpuUsage: 0,
-  disk: 0
+  disk: 0,
+  errApi: '无'
 }
 
-
-//连接事件
-io.sockets.on('connection', socket=> {
-  socket.emit("connected", "连接成功")
-  console.log("连接成功")
-
-  socket.on("disconnect",()=>{
-    console.log("disconnect")
-  })
-
-  socket.on('endConnection', function (data) {
-    console.log("endConnection")
-    console.log(data)
-    socket.emit("unConnection", "服务器端已停止")
-    clearInterval(interval)
-    interval = -1;
-  })
+//循环所有API，并发送请求
+for (let index = 0; index < apiList.length; index++) {
+  const api = apiList[index];
+  if (api.method == 'post') {
+    if (api.contentType === 'json') {
+      allApiReq.push(axios.post(api.apiPath, api.body))
+    } else {
+      const req = axios.post(api.apiPath, api.body, {
+        transformRequest: [function (data) {
+          let ret = ''
+          for (let it in data) {
+            ret += encodeURIComponent(it) + '=' + encodeURIComponent(data[it]) + '&'
+          }
+          return ret
+        }],
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      })
+      allApiReq.push(req);
+    }
+  } else {
+    allApiReq.push(axios.get(api.apiPath, {
+      params: api.body
+    }))
+  }
+}
+//返回错误API
+Promise.all(allApiReq).then(res => {
+  return true;
+}).catch(e => {
+  data.errApi = e.config.url
+  return false;
+}).then(res => {
+  data.apiStatus = res
 })
 
 //获取IP地址
@@ -93,7 +114,6 @@ function start(){
     interval = setInterval(function () {
       var freeMem = os.freemem()/1024/1024/1024;
       var totalMem = os.totalmem()/1024/1024/1024;
-      data.apiStatus = apiStatus.apiStatus,
       data.memory = (totalMem - freeMem).toFixed(2) + "G"  + "|" + totalMem.toFixed(2) + "G",
       data.cpuUsage = ( currCPU * 100.0 ).toFixed(2) + "%", 
 
